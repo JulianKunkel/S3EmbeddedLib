@@ -6,8 +6,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <linux/limits.h>
-#include <dirent.h>
 
 #include <netdb.h>
 #include <sys/socket.h>
@@ -16,49 +14,20 @@
 
 #include <libS3-gw.h>
 
-#define PORT 2020
-#define SA struct sockaddr
-
-#define BUFF_SIZE 1024*1024*100
-#define WARNING(...) printf("LIBS3R WARNING %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
-#define INFO(...) printf("LIBS3R INFO %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
-#define FATAL(...) do{ printf(__VA_ARGS__); exit(0); } while(0);
-
 typedef struct {
-  char * dirname;
+  char * hostname;
   int socket;
+  int buffer_size_send;
+  int buffer_size_rcv;
 } options_t;
 
 static options_t opt;
 
-
-static void con(int sockfd)
-{
-    char buff[MAX_DATA_SIZE];
-    int n;
-    for (;;) {
-        bzero(buff, sizeof(buff));
-        printf("Enter the string : ");
-        n = 0;
-        while ((buff[n++] = getchar()) != '\n')
-            ;
-        write(sockfd, buff, sizeof(buff));
-        bzero(buff, sizeof(buff));
-        read(sockfd, buff, sizeof(buff));
-        printf("From Server : %s", buff);
-        if ((strncmp(buff, "exit", 4)) == 0) {
-            printf("Client Exit...\n");
-            break;
-        }
-    }
-}
-
-#define SET_BUCKET_NAME(buf, hostname, name) sprintf(buf, "%s/%s", hostname ? hostname : opt.dirname, name);
-#define SET_OBJECT_NAME(buf, hostname, name, key) sprintf(buf, "%s/%s/%s", hostname ? hostname : opt.dirname, name, key);
+#define SET_OBJECT_NAME(buf, name, key) sprintf(buf, "%s/%s", name, key);
 
 
 const char *S3_get_status_name(S3Status status){
-  return "libS3EmbeddedStatus";
+  return "libS3Remote";
 }
 
 void S3_deinitialize(){
@@ -69,12 +38,14 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
                        const char *defaultS3HostName)
 {
   memset(& opt, 0, sizeof(opt));
-  if(defaultS3HostName != NULL){
-   opt.dirname = strdup(defaultS3HostName);
+  opt.buffer_size_send = 64*1024;
+  opt.buffer_size_rcv = 64*1024;
+  if(opt.hostname){
+    opt.hostname = strdup(defaultS3HostName);
   }else{
-   opt.dirname = "s3embedded";
+    opt.hostname = "localhost:2020";
   }
-  WARNING("Using the S3remote library with storage: %s\n", opt.dirname);
+  WARNING("Using the S3remote library with storage: %s\n", opt.hostname);
 
   int sockfd;
   struct sockaddr_in servaddr;
@@ -93,6 +64,23 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
       FATAL("connection to server failed: %s\n", strerror(errno));
   }
   opt.socket = sockfd;
+
+  int optval = 1;
+  socklen_t optlen = sizeof(optval);
+  if(setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
+    FATAL("setsockopt()");
+  }
+  if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, optlen) < 0){
+    FATAL("setsockopt SO_SNDBUF");
+  }
+  if(setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, optlen) < 0){
+    FATAL("setsockopt SO_RCVBUF");
+  }
+  getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
+  INFO("send buffer size = %d\n", optval);
+  getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
+  INFO("rcv buffer size = %d\n", optval);
+
   return S3StatusOK;
 }
 
@@ -106,13 +94,16 @@ void S3_create_bucket(S3Protocol protocol, const char *accessKeyId,
                       const S3ResponseHandler *handler, void *callbackData)
 {
   S3ErrorDetails errs = {0};
-  S3Status status = S3StatusOK;
-  char path[PATH_MAX];
-  SET_BUCKET_NAME(path, hostName, bucketName);
-  int ret = mkdir(path, S_IRWXU);
-  if (ret != 0){
-    WARNING("mkdir: %s %s\n", path, strerror(errno));
-    status = S3StatusErrorBucketAlreadyExists;
+  S3Status status = S3StatusErrorBucketAlreadyExists;
+
+  req_t req = {.length = strlen(bucketName) + 1, .op = REQ_CREATE_BUCKET};
+  resp_t resp;
+  strcpy(req.path, bucketName);
+
+  if(snd_data(opt.socket, HEADER_LENGTH + req.length, (uint8_t*) & req) == 0 &&
+    rcv_data(opt.socket, HEADER_LENGTH, (uint8_t*) & resp) == 0
+    ){
+      status = resp.status;
   }
 
   handler->completeCallback(status, & errs, callbackData);
@@ -127,14 +118,16 @@ void S3_delete_bucket(S3Protocol protocol, S3UriStyle uriStyle,
                       const S3ResponseHandler *handler, void *callbackData)
 {
   S3ErrorDetails errs = {0};
-  S3Status status = S3StatusOK;
-  char path[PATH_MAX];
-  SET_BUCKET_NAME(path, hostName, bucketName);
-  int ret = rmdir(path);
-  if (ret != 0){
-    WARNING("rmdir: %s %s\n", path, strerror(errno));
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
+  S3Status status = S3StatusErrorAccessDenied;
+
+  req_t req = {.length = strlen(bucketName) + 1, .op = REQ_DELETE_BUCKET};
+  resp_t resp;
+  strcpy(req.path, bucketName);
+
+  if(snd_data(opt.socket, HEADER_LENGTH + req.length, (uint8_t*) & req) == 0 &&
+    rcv_data(opt.socket, HEADER_LENGTH, (uint8_t*) & resp) == 0
+    ){
+      status = resp.status;
   }
 
   handler->completeCallback(status, & errs, callbackData);
@@ -148,25 +141,33 @@ void S3_list_service(S3Protocol protocol, const char *accessKeyId,
                      const S3ListServiceHandler *handler, void *callbackData)
 {
   S3ErrorDetails errs = {0};
-  S3Status status = S3StatusOK;
-  struct dirent * d;
+  S3Status status = S3StatusErrorAccessDenied;
   char username[100];
   getlogin_r(username, 100);
-  DIR * dir = opendir(hostName ? hostName : opt.dirname);
-  if(dir){
-    while ((d = readdir(dir)) != NULL){
-      // skip dot files:
-      if(d->d_name[0] == '.') {
-        continue;
+
+  req_t req = {.length = 1, .op = REQ_LIST_BUCKET};
+  req.path[0] = 0;
+  resp_t resp;
+
+  if(snd_data(opt.socket, HEADER_LENGTH + req.length, (uint8_t*) & req) == 0 &&
+    rcv_data(opt.socket, HEADER_LENGTH, (uint8_t*) & resp) == 0
+    ){
+      status = resp.status;
+      // receive the actual data
+      char * data = malloc(resp.length);
+      if(rcv_data(opt.socket, resp.length, (uint8_t*) data) != 0){
+        status = S3StatusErrorAccessDenied;
+      }else{
+        char * last = data;
+        for(int i=0; i < resp.length; i++){
+          if(data[i] == '\0'){
+            int creationDateSeconds = 0;
+            handler->listServiceCallback(username, username, last, creationDateSeconds, callbackData);
+            last = & data[i] + 1;
+          }
+        }
       }
-      int creationDateSeconds = 0;
-      handler->listServiceCallback(username, username, d->d_name, creationDateSeconds, callbackData);
-    }
-    closedir(dir);
-  }else{
-    WARNING("opendir: %s %s\n", hostName ? hostName : opt.dirname, strerror(errno));
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
+      free(data);
   }
   handler->responseHandler.completeCallback(status, & errs, callbackData);
 }
@@ -180,35 +181,9 @@ void S3_list_bucket(const S3BucketContext *bc,
 {
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
-  struct dirent * d;
-  char path[PATH_MAX];
-  SET_BUCKET_NAME(path, bc->hostName, bc->bucketName);
   char username[100];
   getlogin_r(username, 100);
-  int prefix_len = prefix != NULL ? strlen(prefix) : 0;
-  DIR * dir = opendir(path);
-  if(dir){
-    S3ListBucketContent c = {0};
-    c.ownerDisplayName = username;
-    c.ownerId = username;
-    while ((d = readdir(dir)) != NULL){
-      // skip dot files:
-      if(d->d_name[0] == '.') {
-        continue;
-      }
-      if(prefix_len > 0 && (strncmp(prefix, d->d_name, prefix_len) != 0 || d->d_name[prefix_len + 1] == 0)){
-        // do not match the prefix itself
-        continue;
-      }
-      c.key = d->d_name;
-      handler->listBucketCallback(0, NULL, 1, &c, 0, NULL, callbackData);
-    }
-    closedir(dir);
-  }else{
-    WARNING("opendir: %s %s\n", path, strerror(errno));
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
-  }
+
   handler->responseHandler.completeCallback(status, & errs, callbackData);
 }
 
@@ -226,13 +201,6 @@ void S3_test_bucket(S3Protocol protocol, S3UriStyle uriStyle,
 {
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
-  char path[PATH_MAX];
-  SET_BUCKET_NAME(path, hostName, bucketName);
-  struct stat sbuf;
-  int ret = stat(path, & sbuf);
-  if(ret != 0){
-    status = S3StatusErrorNoSuchBucket;
-  }
 
   handler->completeCallback(status, & errs, callbackData);
 }
@@ -247,27 +215,8 @@ void S3_put_object(const S3BucketContext *bc, const char *key,
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
-  SET_OBJECT_NAME(path, bc->hostName, bc->bucketName, key);
-  FILE * fd = fopen(path, "w");
-  if(fd != NULL){
-    char * buffer = malloc(BUFF_SIZE);
-    int size = handler->putObjectDataCallback(BUFF_SIZE, buffer, callbackData);
-    size_t written = 0;
-    if (size > 0){
-      written = fwrite(buffer, 1, size, fd);
-    }
-    fclose(fd);
-    free(buffer);
-    if(written != size){
-      WARNING("write %d %s\n", size, strerror(errno));
-      status = S3StatusErrorAccessDenied;
-      errs.message = strerror(errno);
-    }
-  }else{
-    WARNING("write %s", strerror(errno));
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
-  }
+  SET_OBJECT_NAME(path, bc->bucketName, key);
+
   handler->responseHandler.completeCallback(status, & errs, callbackData);
 }
 
@@ -282,26 +231,8 @@ void S3_get_object(const S3BucketContext *bc, const char *key,
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
-  SET_OBJECT_NAME(path, bc->hostName, bc->bucketName, key);
-  FILE * fd = fopen(path, "r");
-  if(fd == NULL){
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
-  }else{
-    char * buffer = malloc(byteCount);
-    if (startByte) {
-      fseeko(fd, startByte, SEEK_SET);
-    }
-    size_t readb = fread(buffer, 1, byteCount, fd);
-    if(readb == 0){
-      status = S3StatusErrorAccessDenied;
-      errs.message = strerror(errno);
-    }else{
-      handler->getObjectDataCallback(readb, buffer, callbackData);
-    }
-    fclose(fd);
-    free(buffer);
-  }
+  SET_OBJECT_NAME(path, bc->bucketName, key);
+
   handler->responseHandler.completeCallback(status, & errs, callbackData);
 }
 
@@ -313,18 +244,8 @@ void S3_head_object(const S3BucketContext *bc, const char *key,
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
-  SET_OBJECT_NAME(path, bc->hostName, bc->bucketName, key);
-  struct stat sbuf;
-  int ret = stat(path, & sbuf);
-  if(ret != 0){
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
-  }else{
-    S3ResponseProperties p;
-    p.contentLength = sbuf.st_size;
-    p.lastModified = sbuf.st_mtime;
-    handler->propertiesCallback(& p, callbackData);
-  }
+  SET_OBJECT_NAME(path, bc->bucketName, key);
+
 
   handler->completeCallback(status, & errs, callbackData);
 }
@@ -338,12 +259,7 @@ void S3_delete_object(const S3BucketContext *bc, const char *key,
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
-  SET_OBJECT_NAME(path, bc->hostName, bc->bucketName, key);
-  int ret = unlink(path);
-  if(ret != 0){
-    status = S3StatusErrorAccessDenied;
-    errs.message = strerror(errno);
-  }
+  SET_OBJECT_NAME(path, bc->bucketName, key);
 
   handler->completeCallback(status, & errs, callbackData);
 }

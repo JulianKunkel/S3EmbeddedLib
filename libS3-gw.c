@@ -1,90 +1,123 @@
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
+
+#include <libs3.h>
 #include <libS3-gw.h>
 
-#define WARNING(...) printf("LIBS3R WARNING %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
-#define INFO(...) printf("LIBS3R INFO %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
-#define FATAL(...) do{ printf(__VA_ARGS__); exit(0); } while(0);
-
-#define PORT 2020
-#define SA struct sockaddr
-
 typedef struct{
+  char * dirname;
   int buffer_size_send;
   int buffer_size_rcv;
 } options_t;
 
 static options_t opt;
 
-int rcv_data(int sockfd, int remain, uint8_t* pos){
+#define SET_NAME(buf, name) sprintf(buf, "%s/%s", opt.dirname, name);
+
+
+static int handle_request(int sockfd, req_t * req){
+  resp_t rsp = {.length = 0, .status = S3StatusOK};
+
+  char path[PATH_MAX];
   int ret;
-  while(remain > 0){
-    ret = read(sockfd, pos, remain);
-    if(ret == 0){
-      if(errno == 0){
-        INFO("closed connection\n");
-        return -1;
+  INFO("op: %d path: %s\n", req->op, req->path);
+  SET_NAME(path, req->path);
+  switch(req->op){
+    case(REQ_LIST_BUCKET):{
+      struct dirent * d;
+      DIR * dir = opendir(opt.dirname);
+      if(dir){
+        char * buff = malloc(MAX_DATA_SIZE);
+        int pos = 0;
+        while ((d = readdir(dir)) != NULL){
+          // skip dot files:
+          if(d->d_name[0] == '.') {
+            continue;
+          }
+          if(pos + PATH_MAX > MAX_DATA_SIZE){
+            FATAL("Too big directory content!");
+          }
+          pos += sprintf(& buff[pos], "%s", d->d_name) + 1;
+        }
+        closedir(dir);
+        rsp.length = pos;
+        if(snd_data(sockfd, HEADER_LENGTH, (uint8_t*) & rsp) != 0) return -1;
+        if(snd_data(sockfd, pos, (uint8_t*) buff) != 0) return -1;
+        free(buff);
+      }else{
+        rsp.status = S3StatusErrorAccessDenied;
+        if(snd_data(sockfd, HEADER_LENGTH, (uint8_t*) & rsp) != 0) return -1;
       }
-      INFO("read error: %s\n", strerror(errno));
-      return -1;
-    }
-    remain -= ret;
-    pos += ret;
+      return 0;
+    }case(REQ_CREATE_BUCKET):
+      ret = mkdir(path, S_IRWXU);
+      if(ret != 0){
+        INFO("Couldn't create directory: %s\n", path);
+        rsp.status = S3StatusErrorBucketAlreadyExists;
+      }
+      if(snd_data(sockfd, HEADER_LENGTH, (uint8_t*) & rsp) != 0) return -1;
+      return 0;
+    case(REQ_DELETE_BUCKET):
+      ret = unlink(path);
+      if(ret != 0){
+        INFO("Couldn't delete directory: %s\n", path);
+        rsp.status = S3StatusErrorAccessDenied;
+      }
+      if(snd_data(sockfd, HEADER_LENGTH, (uint8_t*) & rsp) != 0) return -1;
+      return 0;
+    default:
+      INFO("Unsupported operation: %d\n", req->op);
+      rsp.status = S3StatusBadContentType;
+
+      if(snd_data(sockfd, HEADER_LENGTH, (uint8_t*) & rsp) != 0) return -1;
+      return 0;
   }
-  return 0;
 }
+
 
 static void * handle_connection(void * sockP){
   int sockfd = (int)(size_t) sockP;
-  req_t * data = malloc(MAX_DATA_SIZE + sizeof(int));
-  resp_t * rsp = malloc(MAX_DATA_SIZE + sizeof(int));
+  req_t data;
   while(1) {
-      if(rcv_data(sockfd, sizeof(data->length), (uint8_t*) & data->length) != 0) break;
-      INFO("Rcvd: %d\n", data->length);
-      if(data->length > MAX_DATA_SIZE){
+      if(rcv_data(sockfd, HEADER_LENGTH, (uint8_t*) & data) != 0) break;
+      //INFO("Rcvd: %d\n", data.length);
+      if(data.length > MAX_DATA_SIZE){
         INFO("Aborting connecting MSG size limit: %d\n", MAX_DATA_SIZE);
         goto cleanup;
       }
-      if(rcv_data(sockfd, data->length, (uint8_t*) & data + sizeof(data->length)) != 0) break;
+      if(rcv_data(sockfd, data.length, (uint8_t*) & data + HEADER_LENGTH) != 0) break;
 
-      // create response
-      rsp->length = sizeof(uint32_t);
-
-      // send response
-      uint8_t * pos = (uint8_t*) & rsp;
-      int remain = rsp->length;
-      int ret;
-      while(remain > 0){
-        ret = write(sockfd, pos, remain);
-        if(ret == 0){
-          INFO("write error: %s\n", strerror(errno));
-          goto cleanup;
-        }
-        remain -= ret;
-        pos += ret;
-      }
+      if(handle_request(sockfd, & data) != 0) break;
   }
 cleanup:
   close(sockfd);
-  free(data);
-  free(rsp);
   return NULL;
 }
 
 int main(int argc, char ** argv){
     opt.buffer_size_send = 64*1024;
     opt.buffer_size_rcv = 64*1024;
+    if(argc != 2){
+      printf("Synopsis: %s <DIRNAME>\n", argv[0]);
+      exit(1);
+    }
+    opt.dirname = argv[1];
+
+    struct stat sbuf;
+    int ret = stat(opt.dirname, & sbuf);
+    if(ret != 0){
+     ret = mkdir(opt.dirname, S_IRWXU);
+     if(ret != 0){
+       FATAL("Couldn't create directory: %s\n", opt.dirname);
+     }
+    }
 
     int sockfd;
-    int ret;
     int connfd;
     socklen_t len;
     struct sockaddr_in servaddr, cli;
@@ -120,18 +153,17 @@ int main(int argc, char ** argv){
       if(setsockopt(connfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
         FATAL("setsockopt()");
       }
-
-      getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
-      INFO("send buffer size = %d\n", optval);
-      getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
-      INFO("rcv buffer size = %d\n", optval);
-
       if(setsockopt(connfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, optlen) < 0){
         FATAL("setsockopt SO_SNDBUF");
       }
       if(setsockopt(connfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, optlen) < 0){
         FATAL("setsockopt SO_RCVBUF");
       }
+
+      getsockopt(connfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
+      INFO("send buffer size = %d\n", optval);
+      getsockopt(connfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
+      INFO("rcv buffer size = %d\n", optval);
 
       pthread_t * thread = malloc(sizeof(pthread_t));
       ret = pthread_create(thread, NULL, handle_connection, (void*)(size_t) connfd);
