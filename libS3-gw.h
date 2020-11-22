@@ -15,6 +15,7 @@
 #define SA struct sockaddr
 #define WARNING(...) printf("LIBS3R WARNING %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
 #define INFO(...) printf("LIBS3R INFO %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
+#define DEBUG(...) printf("LIBS3R DEBUG %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
 #define FATAL(...) do{ printf(__VA_ARGS__); exit(0); } while(0);
 
 typedef enum{
@@ -35,7 +36,6 @@ typedef enum{
 typedef struct{
   uint32_t length;
   op_req_e op;
-  char path[PATH_MAX];
 } req_t;
 
 typedef struct{
@@ -43,7 +43,7 @@ typedef struct{
   S3Status status;
 } resp_t;
 
-int rcv_data(int sockfd, int remain, uint8_t* pos);
-int snd_data(int sockfd, int remain, uint8_t* pos);
+int rcv_data(int sockfd, int remain, void* pos);
+int snd_data(int sockfd, int remain, void const* pos);
 
 #endif
