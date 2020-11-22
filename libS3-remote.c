@@ -127,7 +127,6 @@ void S3_delete_bucket(S3Protocol protocol, S3UriStyle uriStyle,
   req_t req = {.length = strlen(bucketName) + 1, .op = REQ_DELETE_BUCKET};
   resp_t resp;
 
-
   if(snd_data(opt.socket, HEADER_LENGTH, & req) == 0 &&
     snd_data(opt.socket, req.length, bucketName) == 0 &&
     rcv_data(opt.socket, HEADER_LENGTH, & resp) == 0
@@ -189,16 +188,16 @@ void S3_list_bucket(const S3BucketContext *bc,
   S3Status status = S3StatusOK;
   char username[100];
   getlogin_r(username, 100);
-
-  int prefix_len = prefix == NULL ? 0 : strlen(prefix) + 1;
+  prefix = prefix == NULL ? "" : prefix;
+  int prefix_len = strlen(prefix);
   int bucket_len = strlen(bc->bucketName) + 1;
-  req_t req = {.length = bucket_len + prefix_len + sizeof(prefix_len), .op = REQ_LIST_BUCKET};
+  req_t req = {.length = bucket_len + prefix_len + 1 + sizeof(prefix_len), .op = REQ_LIST_BUCKET};
   resp_t resp;
 
   if(snd_data(opt.socket, HEADER_LENGTH, & req) == 0 &&
     snd_data(opt.socket, bucket_len, bc->bucketName) == 0 &&
     snd_data(opt.socket, sizeof(prefix_len), &prefix_len) == 0 &&
-    snd_data(opt.socket, prefix_len, prefix) == 0 &&
+    snd_data(opt.socket, prefix_len + 1, prefix) == 0 &&
     rcv_data(opt.socket, HEADER_LENGTH, & resp) == 0
     ){
     S3ListBucketContent c = {0};
@@ -364,6 +363,7 @@ void S3_delete_object(const S3BucketContext *bc, const char *key,
   S3Status status = S3StatusErrorNoSuchBucket;
   char path[PATH_MAX];
   SET_OBJECT_NAME(path, bc->bucketName, key);
+  DEBUG("DELETING: %s\n", path);
 
   req_t req = {.length = strlen(path) + 1, .op = REQ_DELETE_OBJECT};
   resp_t resp;

@@ -15,7 +15,14 @@
 #define SA struct sockaddr
 #define WARNING(...) printf("LIBS3R WARNING %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
 #define INFO(...) printf("LIBS3R INFO %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
+
+#ifdef USE_DEBUG
 #define DEBUG(...) printf("LIBS3R DEBUG %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
+#else
+#define DEBUG(...) ;
+#endif
+
+
 #define FATAL(...) do{ printf(__VA_ARGS__); exit(0); } while(0);
 
 typedef enum{

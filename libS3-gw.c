@@ -167,9 +167,12 @@ static int handle_request(int sockfd, req_t * req){
           if(d->d_name[0] == '.') {
             continue;
           }
-          if(prefix_len > 0 && (strncmp(prefix, d->d_name, prefix_len) != 0 || d->d_name[prefix_len + 1] == 0)){
-            // do not match the prefix itself
-            continue;
+          if(prefix_len > 0){
+            int cmp = strncmp(prefix, d->d_name, prefix_len);
+            if(cmp != 0 || (cmp == 0 && d->d_name[prefix_len] == 0)){            // do not match the prefix itself
+              continue;
+            }
+            DEBUG("%s=%s %d %c\n", d->d_name, prefix, cmp, d->d_name[prefix_len]);
           }
           if(pos + PATH_MAX > MAX_DATA_SIZE){
             FATAL("Too big directory content!");

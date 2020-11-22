@@ -13,3 +13,11 @@ The following libraries are provided:
 
 # Options
 At runtime specify the directory path as hostname in S3_initialize.
+
+# Usage with IOR
+
+To build IOR with the fake library, a simple way is to change the linking process:
+  $ rm md-workbench mdtest ior
+  $ make V=1 extraLDADD="/home/kunkel/ur-git/ior/ior-master/S3EmbeddedLib/libS3e.so"
+You can link the embedded library libS3e.so or the remote library libS3r.so.
+You may also create a symlink to any library as libS3.so and then change it on the fly.
