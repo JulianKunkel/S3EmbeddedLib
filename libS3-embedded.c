@@ -46,7 +46,7 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
   struct stat sbuf;
   int ret = stat(opt.dirname, & sbuf);
   if(ret != 0){
-   ret = mkdir(opt.dirname, S_IRWXU);
+   ret = mkdir(opt.dirname, S_IRWXU | S_IRWXG);
    if(ret != 0){
      FATAL("Couldn't create directory: %s\n", opt.dirname);
    }
@@ -67,7 +67,7 @@ void S3_create_bucket(S3Protocol protocol, const char *accessKeyId,
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
   SET_BUCKET_NAME(path, hostName, bucketName);
-  int ret = mkdir(path, S_IRWXU);
+  int ret = mkdir(path, S_IRWXU | S_IRWXG);
   if (ret != 0){
     WARNING("mkdir: %s %s\n", path, strerror(errno));
     status = S3StatusErrorBucketAlreadyExists;
@@ -165,6 +165,13 @@ void S3_list_bucket(const S3BucketContext *bc,
     closedir(dir);
   }else{
     WARNING("opendir: %s %s\n", path, strerror(errno));
+    if(errno == EACCES){
+      struct stat sbuf;
+      int ret = stat(path, & sbuf);
+      if(ret == 0){
+        WARNING("STAT user: %d group: %d mode: %o\n", (int) sbuf.st_uid, (int) sbuf.st_gid, (int) sbuf.st_mode);
+      }
+    }
     status = S3StatusErrorAccessDenied;
     errs.message = strerror(errno);
   }
