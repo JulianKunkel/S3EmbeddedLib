@@ -47,7 +47,7 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
   int ret = stat(opt.dirname, & sbuf);
   if(ret != 0){
    ret = mkdir(opt.dirname, S_IRWXU | S_IRWXG);
-   if(ret != 0){
+   if(ret != 0 && errno != EEXIST){
      FATAL("Couldn't create directory: %s\n", opt.dirname);
    }
   }
