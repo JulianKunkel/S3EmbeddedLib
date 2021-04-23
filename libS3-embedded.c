@@ -68,7 +68,7 @@ void S3_create_bucket(S3Protocol protocol, const char *accessKeyId,
   char path[PATH_MAX];
   SET_BUCKET_NAME(path, hostName, bucketName);
   int ret = mkdir(path, S_IRWXU | S_IRWXG);
-  if (ret != 0){
+  if (ret != 0 && errno != EEXIST){
     WARNING("mkdir: %s %s\n", path, strerror(errno));
     status = S3StatusErrorBucketAlreadyExists;
   }
