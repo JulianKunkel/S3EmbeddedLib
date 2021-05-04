@@ -20,9 +20,24 @@ typedef struct {
 
 static options_t opt;
 
+static inline unsigned hash_func(char const * name){
+  unsigned hash=0;
+  for(char const * c = name; *c != '\0'; c++){
+    hash = (hash << 3) + *c;
+  }
+  return hash % (10001); // max 10001 directories to be used
+}
+
+#ifdef S3_EXTRA_BUCKET
+#define SET_BUCKET_HASH_DIR(buf, hostname, name) sprintf(buf, "%s/%u", hostname ? hostname : opt.dirname, hash_func(name));
+#define SET_BUCKET_NAME(buf, hostname, name) sprintf(buf, "%s/%u/%s", hostname ? hostname : opt.dirname, hash_func(name), name);
+#define SET_OBJECT_NAME(buf, hostname, name, key) sprintf(buf, "%s/%u/%s/%s", hostname ? hostname : opt.dirname, hash_func(name), name, key);
+
+#else
+#define SET_BUCKET_HASH_DIR(buf, hostname, name) sprintf(buf, "%s/%s", hostname ? hostname : opt.dirname, name);
 #define SET_BUCKET_NAME(buf, hostname, name) sprintf(buf, "%s/%s", hostname ? hostname : opt.dirname, name);
 #define SET_OBJECT_NAME(buf, hostname, name, key) sprintf(buf, "%s/%s/%s", hostname ? hostname : opt.dirname, name, key);
-
+#endif
 
 const char *S3_get_status_name(S3Status status){
   return "libS3EmbeddedStatus";
@@ -66,13 +81,22 @@ void S3_create_bucket(S3Protocol protocol, const char *accessKeyId,
   S3ErrorDetails errs = {0};
   S3Status status = S3StatusOK;
   char path[PATH_MAX];
-  SET_BUCKET_NAME(path, hostName, bucketName);
+  SET_BUCKET_HASH_DIR(path, hostName, bucketName);
   int ret = mkdir(path, S_IRWXU | S_IRWXG);
   if (ret != 0 && errno != EEXIST){
     WARNING("mkdir: %s %s\n", path, strerror(errno));
     status = S3StatusErrorBucketAlreadyExists;
+  }else{
+#ifdef S3_EXTRA_BUCKET    
+    // might be that the bucket has just been deleted. Possible race condition between create/delete bucket!
+    SET_BUCKET_NAME(path, hostName, bucketName);
+    int ret = mkdir(path, S_IRWXU | S_IRWXG);
+    if (ret != 0 && errno != EEXIST){
+      WARNING("mkdir: %s %s\n", path, strerror(errno));
+      status = S3StatusErrorBucketAlreadyExists;
+    }
+#endif    
   }
-
   handler->completeCallback(status, & errs, callbackData);
 }
 
@@ -93,11 +117,17 @@ void S3_delete_bucket(S3Protocol protocol, S3UriStyle uriStyle,
     WARNING("rmdir: %s %s\n", path, strerror(errno));
     status = S3StatusErrorAccessDenied;
     errs.message = strerror(errno);
+  }else{
+#ifdef S3_EXTRA_BUCKET
+    SET_BUCKET_HASH_DIR(path, hostName, bucketName);
+    ret = rmdir(path); // might be that the bucket is still in use. Possible race condition between create/delete bucket!
+#endif
   }
 
   handler->completeCallback(status, & errs, callbackData);
 }
 
+/* This function does only approximate the buckets as we added a level of indirection! */
 void S3_list_service(S3Protocol protocol, const char *accessKeyId,
                      const char *secretAccessKey, const char *securityToken,
                      const char *hostName, const char *authRegion,

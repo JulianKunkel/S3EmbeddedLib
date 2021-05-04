@@ -1,4 +1,4 @@
-FLAGS=-g3 -O3 -Wall
+FLAGS=-g3 -O3 -Wall $(CFLAGS)
 
 all: libS3e.so libS3r.so libS3gw
 
