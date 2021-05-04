@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <linux/limits.h>
 #include <dirent.h>
+#include <libS3e.h>
+
 
 
 #define BUFF_SIZE 1024*1024*100
@@ -20,24 +22,6 @@ typedef struct {
 
 static options_t opt;
 
-static inline unsigned hash_func(char const * name){
-  unsigned hash=0;
-  for(char const * c = name; *c != '\0'; c++){
-    hash = (hash << 3) + *c;
-  }
-  return hash % (10001); // max 10001 directories to be used
-}
-
-#ifdef S3_EXTRA_BUCKET
-#define SET_BUCKET_HASH_DIR(buf, hostname, name) sprintf(buf, "%s/%u", hostname ? hostname : opt.dirname, hash_func(name));
-#define SET_BUCKET_NAME(buf, hostname, name) sprintf(buf, "%s/%u/%s", hostname ? hostname : opt.dirname, hash_func(name), name);
-#define SET_OBJECT_NAME(buf, hostname, name, key) sprintf(buf, "%s/%u/%s/%s", hostname ? hostname : opt.dirname, hash_func(name), name, key);
-
-#else
-#define SET_BUCKET_HASH_DIR(buf, hostname, name) sprintf(buf, "%s/%s", hostname ? hostname : opt.dirname, name);
-#define SET_BUCKET_NAME(buf, hostname, name) sprintf(buf, "%s/%s", hostname ? hostname : opt.dirname, name);
-#define SET_OBJECT_NAME(buf, hostname, name, key) sprintf(buf, "%s/%s/%s", hostname ? hostname : opt.dirname, name, key);
-#endif
 
 const char *S3_get_status_name(S3Status status){
   return "libS3EmbeddedStatus";
