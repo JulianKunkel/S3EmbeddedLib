@@ -9,6 +9,8 @@
 
 #include <libs3.h>
 #include <libS3-gw.h>
+#include <libS3e.h>
+
 
 typedef struct{
   char * dirname;
@@ -17,8 +19,6 @@ typedef struct{
 } options_t;
 
 static options_t opt;
-
-#define SET_NAME(buf, name) sprintf(buf, "%s/%s", opt.dirname, name);
 
 
 static int handle_request(int sockfd, req_t * req){
