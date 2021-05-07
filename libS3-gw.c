@@ -49,7 +49,7 @@ static int handle_request(int sockfd, req_t * req){
   }
 
   char path[PATH_MAX];
-  SET_NAME(path, data);
+  SET_NAME_HASH_DIR(path, data);
   switch(req->op){
     case(REQ_GET_OBJECT):{
       uint64_t * pos = (uint64_t*) (data + strlen(data) + 1);
@@ -239,21 +239,36 @@ static int handle_request(int sockfd, req_t * req){
       if(ret != 0){
         DEBUG("Couldn't create directory: %s\n", path);
         rsp.status = S3StatusErrorBucketAlreadyExists;
-      }
+      }else{
+#ifdef S3_EXTRA_BUCKET    
+          // might be that the bucket has just been deleted. Possible race condition between create/delete bucket!
+          SET_NAME(path, data);
+          int ret = mkdir(path, S_IRWXU | S_IRWXG);
+          if (ret != 0 && errno != EEXIST){
+            WARNING("mkdir: %s %s\n", path, strerror(errno));
+            rsp.status = S3StatusErrorBucketAlreadyExists;
+          }
+#endif 
       if(snd_data(sockfd, HEADER_LENGTH,  & rsp) != 0){
         retval = -1;
         goto cleanup;
       }
+      } 
       break;
     case(REQ_DELETE_BUCKET):
       ret = rmdir(path);
       if(ret != 0){
         DEBUG("Couldn't delete directory: %s\n", path);
         rsp.status = S3StatusErrorAccessDenied;
-      }
+      }else{
+#ifdef S3_EXTRA_BUCKET
+    SET_NAME_HASH_DIR(path, data);
+    ret = rmdir(path); // might be that the bucket is still in use. Possible race condition between create/delete bucket!
+#endif
       if(snd_data(sockfd, HEADER_LENGTH,  & rsp) != 0){
         retval = -1;
         goto cleanup;
+      }
       }
       break;
     default:
