@@ -50,3 +50,11 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+my-mint-dir/
+out*.log
+libS3gw
+libs3.h
+error*.log
+mintests3cmd.sh
+s3test.sh
+s3-test-object*.downloaded
