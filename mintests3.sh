@@ -9,7 +9,7 @@ if [ -n "$MINT_MODE" ]; then
         exit 1
     fi
     if [ -z "${S3_HOSTNAME+x}" ]; then
-        echo "SERVER_ENDPOINT not defined"
+        echo "S3_HOSTNAME not defined"
         exit 1
     fi
     if [ -z "$S3_ACCESS_KEY_ID" ]; then
@@ -22,14 +22,6 @@ if [ -n "$MINT_MODE" ]; then
         exit 1;
     fi
 fi
-
-# if [ -z "${SERVER_ENDPOINT+x}" ]; then
-#     SERVER_ENDPOINT="play.minio.io:9000"
-#     ACCESS_KEY="Q3AM3UQ867SPQQA43P2F"
-#     SECRET_KEY="zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
-#     ENABLE_HTTPS=1
-#     SERVER_REGION="us-east-1"
-# fi
 
 WORK_DIR="$PWD"
 DATA_DIR="$MINT_DATA_DIR"

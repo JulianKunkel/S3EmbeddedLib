@@ -47,7 +47,7 @@ You may also create a symlink to any library as libS3.so and then change it on t
 The s3verify.sh script is inspired from the [Mint](https://github.com/minio/mint) tests used to run correctness, benchmarking, and stress tests against an S3 compatible API.
 ```console
 # Against MinIO Test Endpoint using the original LibS3
-$ export SERVER_ENDPOINT="play.minio.io:9000"
+$ export S3_HOSTNAME="play.minio.io:9000"
 $ ./s3verify.sh
 $ cat outs3.log
 {"name": "s3", "duration": "1612", "function": "test_make_bucket", "status": "PASS"}
