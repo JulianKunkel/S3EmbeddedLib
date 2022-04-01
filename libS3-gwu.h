@@ -52,5 +52,5 @@ typedef struct{
 
 int rcv_data(int sockfd, int remain, void* pos);
 int snd_data(int sockfd, int remain, void const* pos);
-
+int set_nonblock_fd(int sockfd);
 #endif

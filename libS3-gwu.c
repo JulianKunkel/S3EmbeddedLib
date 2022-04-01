@@ -11,6 +11,7 @@
 #include <libS3-gw.h>
 #include <libS3e.h>
 
+#include <fcntl.h>
 
 typedef struct{
   char * dirname;
@@ -271,6 +272,16 @@ cleanup:
   return retval;
 }
 
+// void setnonblocking(int sockfd) {
+//     int flag = fcntl(sockfd, F_GETFL, 0);
+//     if (flag < 0) {
+// 		INFO("fcntl F_GETFL fail");
+//         return;
+//     }
+//     if (fcntl(sockfd, F_SETFL, flag | O_NONBLOCK) < 0) {
+// 		INFO("fcntl F_SETFL fail");
+//     }
+// }
 
 static void * handle_connection(void * sockP){
   int sockfd = (int)(size_t) sockP;
@@ -286,6 +297,7 @@ static void * handle_connection(void * sockP){
   }
 cleanup:
   close(sockfd);
+  sockfd = -1;
   return NULL;
 }
 
@@ -312,7 +324,7 @@ int main(int argc, char ** argv){
     socklen_t len;
     struct sockaddr_in servaddr, cli;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd == -1) {
         FATAL("socket creation failed...\n");
     }
@@ -322,41 +334,44 @@ int main(int argc, char ** argv){
     servaddr.sin_port = htons(PORT);
     servaddr.sin_family = AF_INET;
 
+
+
+
+    // setnonblocking(sockfd);
+
     if ((bind(sockfd, (SA*)&servaddr, sizeof(servaddr))) != 0) {
         FATAL("socket bind failed: %s\n", strerror(errno));
     }
 
-    if ((listen(sockfd, 5)) != 0) {
-        FATAL("Listen failed...\n");
-    }
+    // if ((listen(sockfd, 5)) != 0) {
+    //     FATAL("Listen failed...\n");
+    // }
     len = sizeof(cli);
 
     printf("Startup complete\n");
     // Accept the data packet from client and verification
     while(1){
-      connfd = accept(sockfd, (SA*) &cli, &len);
-      if (connfd < 0) {
-        FATAL("server acccept failed: %s\n", strerror(errno));
-      }
+      // connfd = accept(sockfd, (SA*) &cli, &len);
+      // if (connfd < 0) {
+      //   FATAL("server acccept failed: %s\n", strerror(errno));
+      // }
       int optval = 1;
       socklen_t optlen = sizeof(optval);
-      if(setsockopt(connfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
-        FATAL("setsockopt()");
+      if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &optval, optlen) < 0) {
+        FATAL("setsockopt SO_REUSEPORT");
       }
-      if(setsockopt(connfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, optlen) < 0){
+      if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, optlen) < 0){
         FATAL("setsockopt SO_SNDBUF");
       }
-      if(setsockopt(connfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, optlen) < 0){
+      if(setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, optlen) < 0){
         FATAL("setsockopt SO_RCVBUF");
       }
 
-      getsockopt(connfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
-      INFO("send buffer size = %d\n", optval);
-      getsockopt(connfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
+      getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
       INFO("rcv buffer size = %d\n", optval);
 
       pthread_t * thread = malloc(sizeof(pthread_t));
-      ret = pthread_create(thread, NULL, handle_connection, (void*)(size_t) connfd);
+      ret = pthread_create(thread, NULL, handle_connection, (void*)(size_t) sockfd);
       if(ret != 0){
         WARNING("Couldn't create thread: %s\n", strerror(errno));
       }

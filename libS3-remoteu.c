@@ -38,8 +38,8 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
                        const char *defaultS3HostName)
 {
   memset(& opt, 0, sizeof(opt));
-  opt.buffer_size_send = 64*1024;
-  opt.buffer_size_rcv = 64*1024;
+  opt.buffer_size_send = 1024;
+  opt.buffer_size_rcv = 1024;
   if(opt.hostname){
     opt.hostname = strdup(defaultS3HostName);
   }else{
@@ -50,7 +50,7 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
   int sockfd;
   struct sockaddr_in servaddr;
 
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd == -1) {
       FATAL("socket creation failed\n");
   }
@@ -60,9 +60,19 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
   servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
   servaddr.sin_port = htons(PORT);
 
-  if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
-      FATAL("connection to server failed: %s\n", strerror(errno));
-  }
+  // if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
+  //     FATAL("connection to server failed: %s\n", strerror(errno));
+  // } else{
+  //     INFO("Socket connected\n" );
+  // }
+
+   // connect to server
+    if(connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    {
+        FATAL("\n Error : Connect Failed: %s\n", strerror(errno));
+        exit(0);
+    }
+
   opt.socket = sockfd;
 
   int optval = 1;
@@ -71,14 +81,14 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
   //if(setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, &optval, optlen)){
   //  FATAL("setsockopt()");
   //}
-  if(setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0) {
-    FATAL("setsockopt()");
+  if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, optlen) < 0) {
+    FATAL("setsockoptrrr()");
   }
-  if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, optlen) < 0){
-    FATAL("setsockopt SO_SNDBUF");
+  if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, sizeof(opt.buffer_size_send)) < 0){
+    FATAL("setsockoptr SO_SNDBUF");
   }
-  if(setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, optlen) < 0){
-    FATAL("setsockopt SO_RCVBUF");
+  if(setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, sizeof(opt.buffer_size_rcv)) < 0){
+    FATAL("setsockoptr SO_RCVBUF");
   }
   getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
   INFO("send buffer size = %d\n", optval);
