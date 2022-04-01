@@ -14,8 +14,8 @@ libS3gwu: libS3-gwu.c libS3e-utilu.c libS3-gwu.h
 libS3r.so: libS3-remote.c libS3e-util.c libS3-gw.h
 	gcc libS3e-util.c libS3-remote.c $(FLAGS) -fPIC -shared -o libS3r.so -I.
 
-libS3ru.so: libS3-remoteu.c libS3e-util.c libS3-gw.h
-	gcc libS3e-util.c libS3-remoteu.c $(FLAGS) -fPIC -shared -o libS3ru.so -I.
+libS3ru.so: libS3-remoteu.c libS3e-utilu.c libS3-gwu.h
+	gcc libS3e-utilu.c libS3-remoteu.c $(FLAGS) -fPIC -shared -o libS3ru.so -I.
 
 clean:
 	rm *.so *.o libS3gw*
