@@ -12,7 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include <libS3-gw.h>
+#include <libS3-gwu.h>
 
 typedef struct {
   char * hostname;
@@ -38,61 +38,64 @@ S3Status S3_initialize(const char *userAgentInfo, int flags,
                        const char *defaultS3HostName)
 {
   memset(& opt, 0, sizeof(opt));
-  opt.buffer_size_send = 1024;
-  opt.buffer_size_rcv = 1024;
+  opt.buffer_size_send = 32*1024;
+  opt.buffer_size_rcv = 32*1024;
   if(opt.hostname){
     opt.hostname = strdup(defaultS3HostName);
   }else{
-    opt.hostname = "localhost:2020";
+    opt.hostname = "localhost:2022";
   }
-  WARNING("Using the S3remote library with storage: %s\n", opt.hostname);
+  WARNING("Using the LibS3ru library with storage: %s\n", opt.hostname);
 
-  int sockfd;
-  struct sockaddr_in servaddr;
-
-  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd == -1) {
+  struct sockaddr_in servaddr, clientaddr;
+  int clientfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (clientfd == -1) {
       FATAL("socket creation failed\n");
   }
   memset(&servaddr, 0, sizeof(servaddr));
+  memset(&clientaddr, 0, sizeof(clientaddr));
+
 
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-  servaddr.sin_port = htons(PORT);
+  servaddr.sin_port = htons(SERV_PORT);
 
-  // if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
-  //     FATAL("connection to server failed: %s\n", strerror(errno));
-  // } else{
-  //     INFO("Socket connected\n" );
-  // }
+    // binding client with CLI_PORT
+    clientaddr.sin_family = AF_INET;
+    clientaddr.sin_port = htons(CLI_PORT);    
+    clientaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (bind(clientfd, (struct sockaddr*) &clientaddr, sizeof(clientaddr)) == 0)
+        printf("client Binded Correctly\n");
+    else
+        printf("Unable to bind client\n");
 
-   // connect to server
-    if(connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
-    {
-        FATAL("\n Error : Connect Failed: %s\n", strerror(errno));
-        exit(0);
-    }
+   // connect to server udp no handshake
+  if (connect(clientfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
+      FATAL("connection to server failed: %s\n", strerror(errno));
+  } else{
+      INFO("Socket to server connected\n" );
+  }
 
-  opt.socket = sockfd;
+  opt.socket = clientfd;
 
   int optval = 1;
   socklen_t optlen = sizeof(optval);
   // BSD:
-  //if(setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, &optval, optlen)){
+  //if(setsockopt(clientfd, SOL_SOCKET, SO_NOSIGPIPE, &optval, optlen)){
   //  FATAL("setsockopt()");
   //}
-  if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, optlen) < 0) {
+  if(setsockopt(clientfd, SOL_SOCKET, SO_REUSEADDR, &optval, optlen) < 0) {
     FATAL("setsockoptrrr()");
   }
-  if(setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, sizeof(opt.buffer_size_send)) < 0){
+  if(setsockopt(clientfd, SOL_SOCKET, SO_SNDBUF, & opt.buffer_size_send, sizeof(opt.buffer_size_send)) < 0){
     FATAL("setsockoptr SO_SNDBUF");
   }
-  if(setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, sizeof(opt.buffer_size_rcv)) < 0){
+  if(setsockopt(clientfd, SOL_SOCKET, SO_RCVBUF, & opt.buffer_size_rcv, sizeof(opt.buffer_size_rcv)) < 0){
     FATAL("setsockoptr SO_RCVBUF");
   }
-  getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
+  getsockopt(clientfd, SOL_SOCKET, SO_SNDBUF, & optval, & optlen);
   INFO("send buffer size = %d\n", optval);
-  getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
+  getsockopt(clientfd, SOL_SOCKET, SO_RCVBUF, & optval, & optlen);
   INFO("rcv buffer size = %d\n", optval);
 
   return S3StatusOK;

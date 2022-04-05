@@ -59,3 +59,8 @@ mintests3cmd.sh
 s3test.sh
 s3-test-object*.downloaded
 .vscode/settings.json
+udpserver.c
+udpserver
+udpclient.c
+.vscode/tasks.json
+.vscode/c_cpp_properties.json

@@ -10,8 +10,11 @@
 #include <libs3.h>
 #include <linux/limits.h>
 
+
 #define MAX_DATA_SIZE 1024*1024*100
-#define PORT 2020
+#define SERV_PORT 2022
+#define CLI_PORT 2023
+
 #define SA struct sockaddr
 #define WARNING(...) printf("LIBS3R WARNING %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
 #define INFO(...) printf("LIBS3R INFO %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__);
@@ -51,6 +54,13 @@ typedef struct{
 } resp_t;
 
 int rcv_data(int sockfd, int remain, void* pos);
+int rcv_data_from_client(int sockfd, int remain, void* pos);
+int rcv_data_from_server(int sockfd, int remain, void* pos);
+
 int snd_data(int sockfd, int remain, void const* pos);
+int snd_data_to_client(int sockfd, int remain, void const* pos);
+int snd_data_to_server(int sockfd, int remain, void const* pos);
+
+
 int set_nonblock_fd(int sockfd);
 #endif
