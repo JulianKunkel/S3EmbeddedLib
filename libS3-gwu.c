@@ -27,16 +27,18 @@ static int handle_request(int sockfd, req_t *req)
 {
   resp_t rsp = {.length = 0, .status = S3StatusOK};
 
-  INFO("handle_request: %d\n", req->length);
+  DEBUG("handle_request: %d\n", req->length);
   char *data = malloc(req->length);
   int retval = 0;
   int ret;
-  // if(rcv_data(sockfd, req->length, data) != 0){
-  //   rsp.status = S3StatusErrorEntityTooLarge;
-  //   snd_data_to_client(sockfd, sizeof(rsp), & rsp);
-  //   free(data);
-  //   return -1;
-  // }
+  if(rcv_data(sockfd, req->length, data) != 0){
+    rsp.status = S3StatusErrorEntityTooLarge;
+      FATAL("handle_request issue");
+
+    snd_data(sockfd, sizeof(rsp), & rsp);
+    free(data);
+    return -1;
+  }
 
   INFO("op: %d path: %s\n", req->op, data);
   // verification: check pathname
@@ -46,7 +48,7 @@ static int handle_request(int sockfd, req_t *req)
     if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '-' || c == '_'))
     {
       rsp.status = S3StatusInvalidBucketNameCharacterSequence;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
       }
@@ -69,7 +71,7 @@ static int handle_request(int sockfd, req_t *req)
     if (fd == NULL)
     {
       rsp.status = S3StatusErrorAccessDenied;
-      snd_data_to_client(sockfd, HEADER_LENGTH, &rsp);
+      snd_data(sockfd, HEADER_LENGTH, &rsp);
       break;
     }
     char *buffer = malloc(byteCount);
@@ -81,18 +83,18 @@ static int handle_request(int sockfd, req_t *req)
     if (readb == 0)
     {
       rsp.status = S3StatusErrorAccessDenied;
-      snd_data_to_client(sockfd, HEADER_LENGTH, &rsp);
+      snd_data(sockfd, HEADER_LENGTH, &rsp);
     }
     else
     {
       rsp.length = readb;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
       }
       else
       {
-        snd_data_to_client(sockfd, readb, buffer);
+        snd_data(sockfd, readb, buffer);
       }
     }
     fclose(fd);
@@ -118,11 +120,11 @@ static int handle_request(int sockfd, req_t *req)
       {
         rsp.status = S3StatusErrorAccessDenied;
       }
-      snd_data_to_client(sockfd, HEADER_LENGTH, &rsp);
+      snd_data(sockfd, HEADER_LENGTH, &rsp);
       break;
     }
     rsp.status = S3StatusErrorAccessDenied;
-    snd_data_to_client(sockfd, HEADER_LENGTH, &rsp);
+    snd_data(sockfd, HEADER_LENGTH, &rsp);
     break;
   }
   case (REQ_DELETE_OBJECT):
@@ -133,7 +135,7 @@ static int handle_request(int sockfd, req_t *req)
       DEBUG("Couldn't delete object: %s\n", path);
       rsp.status = S3StatusErrorNoSuchBucket;
     }
-    if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+    if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
     {
       retval = -1;
       goto cleanup;
@@ -148,7 +150,7 @@ static int handle_request(int sockfd, req_t *req)
     {
       DEBUG("Couldn't stat object: %s\n", path);
       rsp.status = S3StatusErrorNoSuchBucket;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -158,17 +160,17 @@ static int handle_request(int sockfd, req_t *req)
     {
       rsp.length = sizeof(sbuf.st_size) + sizeof(sbuf.st_mtime);
       assert(rsp.length == 16);
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
       }
-      if (snd_data_to_client(sockfd, sizeof(sbuf.st_size), &sbuf.st_size) != 0)
+      if (snd_data(sockfd, sizeof(sbuf.st_size), &sbuf.st_size) != 0)
       {
         retval = -1;
         goto cleanup;
       }
-      if (snd_data_to_client(sockfd, sizeof(sbuf.st_mtime), &sbuf.st_mtime) != 0)
+      if (snd_data(sockfd, sizeof(sbuf.st_mtime), &sbuf.st_mtime) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -185,7 +187,7 @@ static int handle_request(int sockfd, req_t *req)
       DEBUG("Couldn't stat directory: %s\n", path);
       rsp.status = S3StatusErrorNoSuchBucket;
     }
-    if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+    if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
     {
       retval = -1;
       goto cleanup;
@@ -227,12 +229,12 @@ static int handle_request(int sockfd, req_t *req)
       }
       closedir(dir);
       rsp.length = pos;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
       }
-      if (snd_data_to_client(sockfd, pos, buff) != 0)
+      if (snd_data(sockfd, pos, buff) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -242,7 +244,7 @@ static int handle_request(int sockfd, req_t *req)
     else
     {
       rsp.status = S3StatusErrorAccessDenied;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -273,12 +275,12 @@ static int handle_request(int sockfd, req_t *req)
       }
       closedir(dir);
       rsp.length = pos;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
       }
-      if (snd_data_to_client(sockfd, pos, buff) != 0)
+      if (snd_data(sockfd, pos, buff) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -288,7 +290,7 @@ static int handle_request(int sockfd, req_t *req)
     else
     {
       rsp.status = S3StatusErrorAccessDenied;
-      if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+      if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
       {
         retval = -1;
         goto cleanup;
@@ -303,7 +305,7 @@ static int handle_request(int sockfd, req_t *req)
       DEBUG("Couldn't create directory: %s\n", path);
       rsp.status = S3StatusErrorBucketAlreadyExists;
     }
-    if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+    if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
     {
       retval = -1;
       goto cleanup;
@@ -316,7 +318,7 @@ static int handle_request(int sockfd, req_t *req)
       DEBUG("Couldn't delete directory: %s\n", path);
       rsp.status = S3StatusErrorAccessDenied;
     }
-    if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+    if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
     {
       retval = -1;
       goto cleanup;
@@ -326,7 +328,7 @@ static int handle_request(int sockfd, req_t *req)
     DEBUG("Unsupported operation: %d\n", req->op);
     rsp.status = S3StatusBadContentType;
 
-    if (snd_data_to_client(sockfd, HEADER_LENGTH, &rsp) != 0)
+    if (snd_data(sockfd, HEADER_LENGTH, &rsp) != 0)
     {
       retval = -1;
       goto cleanup;
@@ -338,25 +340,20 @@ cleanup:
   return retval;
 }
 
-static void *handle_connection(void *sockP)
-{
-  int sockfd = (int)(size_t)sockP;
+static void * handle_connection(void * sockP){
+  int sockfd = (int)(size_t) sockP;
   req_t data;
-  while (1)
-  {
-    if (rcv_data(sockfd, HEADER_LENGTH, &data) != 0)
-      break;
-    INFO("Rcvd: %d\n", data.length);
-    // if(data.length > MAX_DATA_SIZE){
-    //   INFO("Aborting connecting MSG size limit: %d\n", MAX_DATA_SIZE);
-    //   goto cleanup;
-    // }
-    if (handle_request(sockfd, &data) != 0)
-      break;
+  while(1) {
+      if(rcv_data(sockfd, HEADER_LENGTH,  & data) != 0) break;
+      DEBUG("Rcvd: %d\n", data.length);
+      if(data.length > MAX_DATA_SIZE){
+        INFO("Aborting connecting MSG size limit: %d\n", MAX_DATA_SIZE);
+        goto cleanup;
+      }
+      if(handle_request(sockfd, & data) != 0) break;
   }
 cleanup:
   close(sockfd);
-  // sockfd = -1;
   return NULL;
 }
 
@@ -384,7 +381,12 @@ int main(int argc, char **argv)
 
   int sockfd;
   socklen_t len;
-  struct sockaddr_in servaddr;
+  struct sockaddr_in servaddr, clientaddr;
+
+  // setup client info for testing
+  clientaddr.sin_family = AF_INET;
+  clientaddr.sin_port = htons(CLI_PORT);
+  clientaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd == -1)
@@ -414,9 +416,9 @@ int main(int argc, char **argv)
     FATAL("setsockoptr SO_RCVBUF");
   }
   getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &optval, &optlen);
-  INFO("send buffer size = %d\n", optval);
+  DEBUG("send buffer size = %d\n", optval);
   getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &optval, &optlen);
-  INFO("rcv buffer size = %d\n", optval);
+  DEBUG("rcv buffer size = %d\n", optval);
 
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   servaddr.sin_port = htons(SERV_PORT);
@@ -431,21 +433,66 @@ int main(int argc, char **argv)
 
   printf("Startup complete\n");
 
-  req_t data;
-
   while (1)
   {
-    if (rcv_data(sockfd, HEADER_LENGTH, &data) != 0)
-      break;
-    INFO("Rcvd data lenght: %d\n", data.length);
 
-    // if(data.length > MAX_DATA_SIZE){
-    //   INFO("Aborting connecting MSG size limit: %d\n", MAX_DATA_SIZE);
-    //   // goto cleanup;
-    // }
+    ssize_t peeking = recv(sockfd, NULL, 0, MSG_PEEK | MSG_TRUNC);
+    if (peeking < 0)
+    {
+      return;
+    }
+          DEBUG("peeking size: %d\n", peeking);
+
+  req_t data;
+
+    if (rcv_data(sockfd, HEADER_LENGTH, &data) != 0)
+    {    DEBUG("Error rcv_data") }
+  //   DEBUG("Rcvd data lenght: %d\n", data.length);
+
+    // once data received connect to client udp no handshake
+    if (connect(sockfd, (SA *)&clientaddr, sizeof(clientaddr)) != 0)
+    {
+      FATAL("connection to client failed: %s\n", strerror(errno));
+    }
+    else
+    {
+      DEBUG("Socket to client connected\n");
+    }
+
+  //   // if(data.length > MAX_DATA_SIZE){
+  //   //   DEBUG("Aborting connecting MSG size limit: %d\n", MAX_DATA_SIZE);
+  //   //   // goto cleanup;
+  //   // }
     if (handle_request(sockfd, &data) != 0)
-      break;
+    {    DEBUG("Error handle_request") }
   }
+
+  // while (1)
+  // {
+
+  //   ssize_t peeking = recv(sockfd, NULL, 0, MSG_PEEK | MSG_TRUNC);
+  //   if (peeking < 0)
+  //   {
+  //     return;
+  //   }
+  //   DEBUG("peeking size: %d\n", peeking);
+  //   // once data peeked connect to client udp no handshake
+  //   if (connect(sockfd, (SA *)&clientaddr, sizeof(clientaddr)) != 0)
+  //   {
+  //     FATAL("connection to client failed: %s\n", strerror(errno));
+  //   }
+  //   else
+  //   {
+  //     DEBUG("Socket to client connected\n");
+  //   }
+
+  //   pthread_t *thread = malloc(sizeof(pthread_t));
+  //   ret = pthread_create(thread, NULL, handle_connection, (void *)(size_t)sockfd);
+  //   if (ret != 0)
+  //   {
+  //     WARNING("Couldn't create thread: %s\n", strerror(errno));
+  //   }
+  // }
 
   // After chatting close the socket
   close(sockfd);

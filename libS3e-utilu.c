@@ -13,6 +13,35 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+ssize_t fragmented_send(int sockfd, const void *buf, size_t len, int flags)
+{
+  unsigned char *ptr = (unsigned char *)buf;
+
+  size_t total = 0;
+
+  while (total < len)
+  {
+    size_t newsize = len - total;
+    if (newsize > MAX_DATAGRAM_SIZE)
+    {
+      newsize = MAX_DATAGRAM_SIZE;
+    }
+    ssize_t result = send(sockfd, ptr, newsize, flags);
+    if (result < 0)
+    {
+      WARNING("fragmented_send error: %s\n", strerror(errno));
+      return -1;
+    }
+    else
+    {
+      DEBUG("fragmented_send snt: %d\n", result);
+      total += result;
+      ptr += result;
+    }
+  }
+  return (ssize_t)total;
+}
+
 int rcv_data(int sockfd, int remain, void *p)
 {
   DEBUG("rcv_data: %d\n", remain);
@@ -65,16 +94,16 @@ int rcv_data(int sockfd, int remain, void *p)
 
 int snd_data(int sockfd, int remain, void const *p)
 {
-  DEBUG("snd: %d\n", remain);
+  DEBUG("snd_data remain: %d\n", remain);
   uint8_t *pos = (uint8_t *)p;
   ssize_t ret;
   while (remain > 0)
   {
-    ret = send(sockfd, pos, remain, MSG_NOSIGNAL);
+    ret = fragmented_send(sockfd, pos, remain, MSG_NOSIGNAL);
     // ret = sendto(sockfd, pos, remain, 0,(SA*) &cli, sizeof(cli));
     if (ret <= 0)
     {
-      INFO("write error: %s\n", strerror(errno));
+      DEBUG("write error: %s\n", strerror(errno));
       return -1;
     }
     remain -= ret;
